@@ -217,7 +217,7 @@ Public Class ucrScript
             clsRScriptToClean = New RScript(strScript)
             dctRStatements = clsRScriptToClean.statements
         Catch ex As Exception
-            MsgBox("Could not parse R script for Quarto cleaning. " &
+            MsgBoxTranslate("Could not parse R script for Quarto cleaning. " &
                    "Parsing failed with message:" & Environment.NewLine & Environment.NewLine &
                    ex.Message,
                    MsgBoxStyle.Information, "Could Not parse R script")
@@ -258,7 +258,7 @@ Public Class ucrScript
         End If
 
         If clsScriptActive.TextLength > 0 _
-                AndAlso MsgBox("Loading a script from file will clear your current script" _
+                AndAlso MsgBoxTranslate("Loading a script from file will clear your current script" _
                                & Environment.NewLine & "Do you still want to load?",
                                vbYesNo, "Load From File") = vbNo Then
             Return False
@@ -330,7 +330,7 @@ Public Class ucrScript
                                              Path.GetFileName(fileName))
             EnableDisableButtons()
         Catch
-            MsgBox("Could not load the script from file." & Environment.NewLine &
+            MsgBoxTranslate("Could not load the script from file." & Environment.NewLine &
                    "The file may be in use by another program or you may not have access to read from the specified location.",
                    vbExclamation, "Load Script")
         End Try
@@ -423,7 +423,7 @@ Public Class ucrScript
                         strInitialDirectory = Path.GetDirectoryName(dlgSave.FileName)
                     End If
                 Catch
-                    MsgBox("Could not save the " & If(bIsLog, "Log ", "") & "file." & Environment.NewLine &
+                    MsgBoxTranslate("Could not save the " & If(bIsLog, "Log ", "") & "file." & Environment.NewLine &
                    "The file may be in use by another program or you may not have access to write to the specified location.",
                    vbExclamation, "Save " & If(bIsLog, "Log ", "") & "File.")
                 End Try
@@ -439,9 +439,9 @@ Public Class ucrScript
         EnableDisableButtons()
     End Sub
 
-    Private Sub AddTab(Optional enumScriptTypeNew As ScriptType = ScriptType.rScript, Optional bIsLogTab As Boolean = False)
+    Private Sub AddTab(Optional enumScriptTypeNew As ScriptType = ScriptType.rScript, Optional bIsLogTab As Boolean = False, Optional strTabLabel As String = "")
         If enumScriptTypeNew <> ScriptType.rScript AndAlso enumScriptTypeNew <> ScriptType.quarto Then
-            MsgBox("Developer error: The new tab cannot be " & enumScriptType.ToString() & ", it must be R script or Quarto.", MsgBoxStyle.Critical, "New Tab")
+            MsgBoxTranslate("Developer error: The new tab cannot be " & enumScriptType.ToString() & ", it must be R script or Quarto.", MsgBoxStyle.Critical, "New Tab")
             Exit Sub
         End If
 
@@ -515,10 +515,14 @@ Public Class ucrScript
             clsScriptLog.ReadOnly = True
         Else
             Static iTabCounter As Integer = 1
-            Dim strTabLabel As String = "Untitled" & iTabCounter _
-                                        & If(enumScriptTypeNew = ScriptType.quarto, ".qmd", "")
+
+            If String.IsNullOrWhiteSpace(strTabLabel) Then
+                strTabLabel = "Untitled" & iTabCounter &
+                  If(enumScriptTypeNew = ScriptType.quarto, ".qmd", "")
+                iTabCounter += 1
+            End If
+
             tabPageAdded.Text = strTabLabel
-            iTabCounter += 1
         End If
 
         TabControl.TabPages.Add(tabPageAdded)
@@ -527,6 +531,11 @@ Public Class ucrScript
         bIsTextChanged = False
         clsRScript = Nothing
         EnableDisableButtons()
+    End Sub
+
+    Public Sub CreateNewQuartoTab(Optional strTabLabel As String = "")
+        AddTab(enumScriptTypeNew:=ScriptType.quarto,
+           strTabLabel:=strTabLabel)
     End Sub
 
     Private Sub EnableDisableButtons()
@@ -840,7 +849,7 @@ Public Class ucrScript
                 End If
                 dctRStatements = clsRScript.statements
             Catch ex As Exception
-                MsgBox("R script parsing failed with message:" & Environment.NewLine _
+                MsgBoxTranslate("R script parsing failed with message:" & Environment.NewLine _
                    & Environment.NewLine & ex.Message & Environment.NewLine & Environment.NewLine _
                    & "Try using 'Run All' or 'Run Selected'. This will execute the script using a less strict method.",
                    MsgBoxStyle.Information, "Could Not Parse R script")
@@ -899,7 +908,7 @@ Public Class ucrScript
         Try
             strQuartoRenderScript = File.ReadAllText(strQuartoRenderScriptPath)
         Catch ex As Exception
-            MsgBox("Could not read the quarto render script from:" & Environment.NewLine _
+            MsgBoxTranslate("Could not read the quarto render script from:" & Environment.NewLine _
                    & strQuartoRenderScriptPath & Environment.NewLine & Environment.NewLine _
                    & "Error message was:" & Environment.NewLine & ex.Message, MsgBoxStyle.Critical, "Could Not Read Quarto Render Script")
             Return ""
@@ -907,6 +916,9 @@ Public Class ucrScript
 
         'replace the placeholder with the actual quarto script
         strQuartoRenderScript = strQuartoRenderScript.Replace("<<QUARTO_SCRIPT>>", strScript)
+        strQuartoRenderScript = strQuartoRenderScript.Replace(
+    "<<QUIET>>",
+    If(frmMain.bShowRenderDetails, "FALSE", "TRUE"))
 
         Return strQuartoRenderScript
     End Function
@@ -920,7 +932,7 @@ Public Class ucrScript
         Try
             strQuartoTemplate = File.ReadAllText(strQuartoTemplatePath)
         Catch ex As Exception
-            MsgBox("Could not read the quarto template from:" & Environment.NewLine _
+            MsgBoxTranslate("Could not read the quarto template from:" & Environment.NewLine _
                    & strQuartoTemplatePath & Environment.NewLine & Environment.NewLine _
                    & "Error message was:" & Environment.NewLine & ex.Message, MsgBoxStyle.Critical, "Could Not Read Quarto Template")
             Return ""
@@ -929,7 +941,59 @@ Public Class ucrScript
         'replace the placeholder with the correct file path to InstatObject\R
         strQuartoTemplate = strQuartoTemplate.Replace("<<R_PATH>>", strInstatObjectRPath.Replace("\", "/"))
 
+        If frmMain.bRecordQuarto AndAlso
+   Not String.IsNullOrWhiteSpace(frmMain.strSaveFilePath) Then
+
+            Dim strLoadWorkspace As String =
+        "new_RDS <- readRDS(file=""" &
+        frmMain.strSaveFilePath.Replace("\", "/") &
+        """)" & vbCrLf &
+        "data_book$import_RDS(data_RDS=new_RDS)" & vbCrLf &
+        "rm(new_RDS)"
+
+            strQuartoTemplate =
+        strQuartoTemplate.Replace(
+            "<<LOAD_WORKSPACE>>",
+            strLoadWorkspace)
+        Else
+
+            strQuartoTemplate =
+        strQuartoTemplate.Replace(
+            "<<LOAD_WORKSPACE>>",
+            "")
+
+        End If
+
+        Dim strChunkOptions As String =
+    "warning=" & frmMain.bQuartoWarning.ToString().ToUpper() &
+    ", message=" & frmMain.bQuartoMessage.ToString().ToUpper() &
+    ", echo=" & frmMain.bQuartoEcho.ToString().ToUpper() &
+    ", eval=" & frmMain.bQuartoEval.ToString().ToUpper()
+
+        strQuartoTemplate =
+    strQuartoTemplate.Replace(
+        "<<CHUNK_OPTIONS>>",
+        strChunkOptions)
+
+        If Not frmMain.bQuartoHTML Then
+            strQuartoTemplate = strQuartoTemplate.Replace("  html: default" & vbCrLf, "")
+        End If
+
+        If Not frmMain.bQuartoPDF Then
+            strQuartoTemplate = strQuartoTemplate.Replace("  pdf: default" & vbCrLf, "")
+        End If
+
+        If Not frmMain.bQuartoPPTX Then
+            strQuartoTemplate = strQuartoTemplate.Replace("  pptx: default" & vbCrLf, "")
+        End If
+
+        If Not frmMain.bQuartoDOCX Then
+            strQuartoTemplate = strQuartoTemplate.Replace("  docx: default" & vbCrLf, "")
+        End If
+
         Return strQuartoTemplate
+
+
     End Function
 
     '''--------------------------------------------------------------------------------------------
@@ -948,7 +1012,7 @@ Public Class ucrScript
             dctRStatements = New RScript(frmMain.clsRLink.GetFormattedComment(strComment) _
                                             & Environment.NewLine & strScript).statements
         Catch ex As Exception
-            MsgBox("R script parsing failed with message:" & Environment.NewLine _
+            MsgBoxTranslate("R script parsing failed with message:" & Environment.NewLine _
                    & Environment.NewLine & ex.Message & Environment.NewLine & Environment.NewLine _
                    & "R-Instat will now attempt to execute the script using a less strict method.",
                    MsgBoxStyle.Information, "Could Not Parse R Script")
@@ -1294,7 +1358,7 @@ Public Class ucrScript
             Process.Start(Path.Combine(strRInstatLogFilesFolderPath, strScriptFilename))
             TabControl.SelectedTab.Text = Path.GetFileNameWithoutExtension(strScriptFilename)
         Catch
-            MsgBox("Could not save the script file." & Environment.NewLine &
+            MsgBoxTranslate("Could not save the script file." & Environment.NewLine &
                    "The file may be in use by another program or you may not have access to write to the specified location.",
                    vbExclamation, "Open Script as File")
         End Try
@@ -1341,7 +1405,7 @@ Public Class ucrScript
                 strScriptToRun = GetQuartoRenderScript(clsScriptActive.Text)
                 strComment = "Code to render the Quarto script in the Script Window (all text)"
             Case Else
-                MsgBox("Developer error: cannot run script of type " & enumScriptType.ToString(), MsgBoxStyle.Critical, "Run All")
+                MsgBoxTranslate("Developer error: cannot run script of type " & enumScriptType.ToString(), MsgBoxStyle.Critical, "Run All")
                 Exit Sub
         End Select
 
@@ -1350,6 +1414,24 @@ Public Class ucrScript
         frmSetupLoading.Close()
 
         SetFocusAndScrollCaret()
+    End Sub
+
+    Public Sub RunCurrentQuarto()
+
+        If enumScriptType <> ScriptType.quarto Then
+            Exit Sub
+        End If
+
+        Dim strScriptToRun As String =
+        GetQuartoRenderScript(clsScriptActive.Text)
+
+        frmSetupLoading.Show()
+        RunRScript(strScriptToRun,
+               "Code to render the Quarto script in the Script Window")
+        frmSetupLoading.Close()
+
+        SetFocusAndScrollCaret()
+
     End Sub
 
     Private Sub mnuRunCurrentStatementSelection_Click(sender As Object, e As EventArgs) Handles mnuRunCurrentStatementSelection.Click, cmdRunStatementSelection.Click
@@ -1601,4 +1683,38 @@ Public Class ucrScript
         clsScriptActive.GotoPosition(originalCaretPosition)
     End Sub
 
+    Private Sub UpdateRecordQuartoButton()
+
+        cmdRecordQuarto.Text = If(frmMain.bRecordQuarto,
+                              "Stop Quarto",
+                              "Record Quarto")
+
+    End Sub
+
+    Private Sub cmdRecordQuarto_Click(sender As Object, e As EventArgs) Handles cmdRecordQuarto.Click
+        If frmMain.bRecordQuarto Then
+
+            If MessageBox.Show(
+                "This will stop the current Quarto recording session." &
+                Environment.NewLine & Environment.NewLine &
+                "Do you want to continue?",
+                "Stop Quarto",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) = DialogResult.No Then
+                Exit Sub
+            End If
+
+            frmMain.bRecordQuarto = False
+            frmMain.strCurrentQuartoFile = ""
+            frmMain.strCurrentQuartoRdsFile = ""
+            frmMain.strSaveFilePath = ""
+
+        Else
+
+            dlgRecordQuarto.ShowDialog()
+
+        End If
+
+        UpdateRecordQuartoButton()
+    End Sub
 End Class                                                                                                                                                       

@@ -1,4 +1,4 @@
-﻿' R- Instat
+' R- Instat
 ' Copyright (C) 2015-2017
 '
 ' This program is free software: you can redistribute it and/or modify
@@ -30,6 +30,20 @@ Public Class dlgCalculator
     Private clsRemoveLabelsFunction As New RFunction
     Private clsScalarsDataFuntion, clsAddScalarFunction As New RFunction
     Private clsAttachScalarsFunction, clsDetachScalarsFunction As New RFunction
+    Private clsGetFullDataframe As New RFunction
+    Private clsRowNamesFiltered As New RFunction
+    Private clsRowNamesFull As New RFunction
+    Private clsInOperator As New ROperator
+    Private clsFilterIndexAssign As New ROperator
+    Private clsAsEnvironmentFunction As New RFunction
+    Private clsNrowFunction As New RFunction
+    Private clsRepFunction As New RFunction
+    Private clsGet0Function As New RFunction
+    Private clsCalcFullAssign As New ROperator
+    Private clsIndexOperator As New ROperator
+    Private clsIndexAssign As New ROperator
+    Private clsAddColumnsToData As New RFunction
+
     Public bFirstLoad As Boolean = True
     Public iHelpCalcID As Integer
     'holds the original width of the form
@@ -72,12 +86,11 @@ Public Class dlgCalculator
         ucrCalc.chkShowParameters.Checked = False
         ucrCalc.ucrChkStoreScalar.Checked = False
         ucrCalc.ucrSelectorForCalculations.ResetCheckBoxScalar()
-        ucrCalc.ucrSaveResultInto.SetRCode(ucrBase.clsRsyntax.clsBaseCommandString)
         SaveResults()
         ucrCalc.ucrSelectorForCalculations.bUseCurrentFilter = False
         ucrCalc.ucrTryCalculator.SetRSyntax(ucrBase.clsRsyntax)
         ucrBase.clsRsyntax.SetAssignTo(ucrCalc.ucrSaveResultInto.GetText(), strTempColumn:=ucrCalc.ucrSaveResultInto.GetText(),
-                                           strTempDataframe:=ucrCalc.ucrSelectorForCalculations.ucrAvailableDataFrames.cboAvailableDataFrames.Text,
+                                   strTempDataframe:=ucrCalc.ucrSelectorForCalculations.ucrAvailableDataFrames.cboAvailableDataFrames.Text,
                                            bAssignToIsPrefix:=ucrBase.clsRsyntax.clsBaseCommandString.bAssignToIsPrefix,
                                            bAssignToColumnWithoutNames:=ucrBase.clsRsyntax.clsBaseCommandString.bAssignToColumnWithoutNames,
                                            bInsertColumnBefore:=ucrBase.clsRsyntax.clsBaseCommandString.bInsertColumnBefore,
@@ -111,8 +124,9 @@ Public Class dlgCalculator
         clsRemoveLabelsFunction.AddParameter("property", Chr(34) & "labels" & Chr(34), iPosition:=2)
         clsRemoveLabelsFunction.AddParameter("new_val", Chr(34) & Chr(34), iPosition:=3)
 
+        ' Get filtered data frame for calculations (attached)
         clsGetDataframe.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$get_data_frame")
-        clsGetDataframe.AddParameter("use_current_filter", "FALSE")
+        clsGetDataframe.AddParameter("use_current_filter", "TRUE")
         clsGetDataframe.SetAssignTo("`_df`")
 
         clsAttachFunction.SetRCommand("attach")
@@ -120,16 +134,39 @@ Public Class dlgCalculator
         clsAttachFunction.AddParameter("what", clsRFunctionParameter:=clsGetDataframe)
         clsDetachFunction.AddParameter("name", "`_df`")
         clsDetachFunction.AddParameter("unload", "TRUE")
+        clsGetFullDataframe.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$get_data_frame")
+        clsGetFullDataframe.AddParameter("use_current_filter", "FALSE")
+        clsGetFullDataframe.SetAssignTo("`_df_full`")
 
         clsAttachScalarsFunction.SetRCommand("attach")
+        clsAttachScalarsFunction.AddParameter("what", "scalars", iPosition:=0)
+
         clsDetachScalarsFunction.SetRCommand("detach")
-        clsAttachScalarsFunction.AddParameter("what", clsRFunctionParameter:=clsScalarsDataFuntion)
-        clsDetachScalarsFunction.AddParameter("name", "scalars")
-        clsDetachScalarsFunction.AddParameter("unload", "TRUE")
+        clsDetachScalarsFunction.AddParameter("name", "scalars", iPosition:=0)
+        clsDetachScalarsFunction.AddParameter("unload", "TRUE", iPosition:=1)
+
+        clsRowNamesFiltered.SetRCommand("rownames")
+        clsRowNamesFull.SetRCommand("rownames")
+        clsInOperator.SetOperation("%in%")
+        clsInOperator.bSpaceAroundOperation = True
+        clsFilterIndexAssign.SetOperation("<-")
+        clsFilterIndexAssign.bSpaceAroundOperation = True
+        clsAsEnvironmentFunction.SetRCommand("as.environment")
+        clsNrowFunction.SetRCommand("nrow")
+        clsRepFunction.SetRCommand("rep")
+        clsGet0Function.SetRCommand("get0")
+        clsCalcFullAssign.SetOperation("<-")
+        clsCalcFullAssign.bSpaceAroundOperation = True
+        clsIndexOperator.SetOperation("[")
+        clsIndexOperator.bSpaceAroundOperation = False
+        clsIndexAssign.SetOperation("<-")
+        clsIndexAssign.bSpaceAroundOperation = True
+
+        clsAddColumnsToData.SetRCommand(frmMain.clsRLink.strInstatDataObject & "$add_columns_to_data")
 
         ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachFunction, 0)
 
-        ucrBase.clsRsyntax.AddToAfterCodes(clsDetachFunction, 1)
+        ucrBase.clsRsyntax.AddToAfterCodes(clsDetachFunction, 100)
 
         ucrBase.clsRsyntax.SetCommandString("")
 
@@ -164,7 +201,7 @@ Public Class dlgCalculator
 
     Public Sub SetDefaultKeyboard(strNewDefaultKeyboard As String)
         If Not strKeyboards.Contains(strNewDefaultKeyboard) Then
-            MsgBox("Developer error: there is no Calculator keyboard called" & Chr(34) & strNewDefaultKeyboard & Chr(34) & vbNewLine & "Default keyboard will be selected.")
+            MsgBoxTranslate("Developer error: there is no Calculator keyboard called" & Chr(34) & strNewDefaultKeyboard & Chr(34) & vbNewLine & "Default keyboard will be selected.")
             strDefaultKeyboard = ""
         Else
             strDefaultKeyboard = strNewDefaultKeyboard
@@ -184,12 +221,81 @@ Public Class dlgCalculator
     ''' </summary>
     Private Sub SaveResults()
         If ucrCalc.ucrSaveResultInto.ucrChkSave.Checked AndAlso ucrCalc.ucrSaveResultInto.IsComplete Then
+
+            ucrBase.clsRsyntax.RemoveAssignTo()
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsAddColumnsToData)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsFilterIndexAssign)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsCalcFullAssign)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsIndexAssign)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsGetFullDataframe, 1)
             clsRemoveLabelsFunction.AddParameter("col_names", Chr(34) & ucrCalc.ucrSaveResultInto.GetText() & Chr(34), iPosition:=1)
-            ucrBase.clsRsyntax.AddToAfterCodes(clsRemoveLabelsFunction, 3)
+            ucrBase.clsRsyntax.AddToAfterCodes(clsRemoveLabelsFunction, 160)
             ucrBase.clsRsyntax.bExcludeAssignedFunctionOutput = True
             ucrBase.clsRsyntax.iCallType = 0
+
+            ucrBase.clsRsyntax.SetAssignTo("calc", strTempColumn:="", strTempDataframe:="")
+
+            Dim strDF As String = ucrCalc.ucrSelectorForCalculations.strCurrentDataFrame
+            Dim strCol As String = ucrCalc.ucrSaveResultInto.GetText
+
+            If Not String.IsNullOrEmpty(strDF) AndAlso Not String.IsNullOrEmpty(strCol) Then
+                clsGetDataframe.AddParameter("data_name", Chr(34) & strDF & Chr(34), iPosition:=0)
+                clsGetFullDataframe.AddParameter("data_name", Chr(34) & strDF & Chr(34), iPosition:=0)
+                clsRowNamesFull.ClearParameters()
+                clsRowNamesFull.AddParameter("x", "`_df_full`", bIncludeArgumentName:=False, iPosition:=0)
+                clsRowNamesFiltered.ClearParameters()
+                clsRowNamesFiltered.AddParameter("x", "`_df`", bIncludeArgumentName:=False, iPosition:=0)
+                clsInOperator.ClearParameters()
+                clsInOperator.AddParameter("left", clsRFunctionParameter:=clsRowNamesFull, iPosition:=0)
+                clsInOperator.AddParameter("right", clsRFunctionParameter:=clsRowNamesFiltered, iPosition:=1)
+                clsFilterIndexAssign.ClearParameters()
+                clsFilterIndexAssign.AddParameter("left", "filter_index", bIncludeArgumentName:=False, iPosition:=0)
+                clsFilterIndexAssign.AddParameter("right", clsROperatorParameter:=clsInOperator, bIncludeArgumentName:=False, iPosition:=1)
+
+                clsAsEnvironmentFunction.ClearParameters()
+                clsAsEnvironmentFunction.AddParameter("x", "`_df_full`", bIncludeArgumentName:=False, iPosition:=0)
+                clsNrowFunction.ClearParameters()
+                clsNrowFunction.AddParameter("x", "`_df_full`", bIncludeArgumentName:=False, iPosition:=0)
+                clsRepFunction.ClearParameters()
+                clsRepFunction.AddParameter("x", "NA", bIncludeArgumentName:=False, iPosition:=0)
+                clsRepFunction.AddParameter("times", clsRFunctionParameter:=clsNrowFunction, iPosition:=1)
+                clsGet0Function.ClearParameters()
+                clsGet0Function.AddParameter("x", Chr(34) & strCol & Chr(34), iPosition:=0)
+                clsGet0Function.AddParameter("envir", clsRFunctionParameter:=clsAsEnvironmentFunction, iPosition:=1)
+                clsGet0Function.AddParameter("ifnotfound", clsRFunctionParameter:=clsRepFunction, iPosition:=2)
+                clsCalcFullAssign.ClearParameters()
+                clsCalcFullAssign.AddParameter("left", "calc_full", bIncludeArgumentName:=False, iPosition:=0)
+                clsCalcFullAssign.AddParameter("right", clsRFunctionParameter:=clsGet0Function, bIncludeArgumentName:=False, iPosition:=1)
+
+                clsIndexAssign.ClearParameters()
+                clsIndexAssign.AddParameter("left", "calc_full[filter_index]", bIncludeArgumentName:=False, iPosition:=0)
+                clsIndexAssign.AddParameter("right", "calc", bIncludeArgumentName:=False, iPosition:=1)
+
+                clsAddColumnsToData.ClearParameters()
+                clsAddColumnsToData.AddParameter("data_name", Chr(34) & strDF & Chr(34), iPosition:=0)
+                clsAddColumnsToData.AddParameter("col_name", Chr(34) & strCol & Chr(34), iPosition:=1)
+                clsAddColumnsToData.AddParameter("col_data", "calc_full", bIncludeArgumentName:=True, iPosition:=2)
+                clsAddColumnsToData.AddParameter("before", ucrCalc.ucrSaveResultInto.GetText(ucrSave.SaveLocation.before), iPosition:=3)
+
+                Dim strAdjacentColumn As String = ucrCalc.ucrSaveResultInto.GetText(ucrSave.SaveLocation.adjacentColumn)
+                If Not String.IsNullOrEmpty(strAdjacentColumn) Then
+                    strAdjacentColumn = strAdjacentColumn.Trim(Chr(34))
+                    clsAddColumnsToData.AddParameter("adjacent_column", Chr(34) & strAdjacentColumn & Chr(34), iPosition:=4)
+                End If
+
+                ucrBase.clsRsyntax.AddToAfterCodes(clsFilterIndexAssign, 120)
+                ucrBase.clsRsyntax.AddToAfterCodes(clsCalcFullAssign, 121)
+                ucrBase.clsRsyntax.AddToAfterCodes(clsIndexAssign, 122)
+                ucrBase.clsRsyntax.AddToAfterCodes(clsAddColumnsToData, 130)
+                ucrBase.clsRsyntax.AddToAfterCodes(clsRemoveLabelsFunction, 160)
+            End If
         Else
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsAddColumnsToData)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsFilterIndexAssign)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsCalcFullAssign)
+            ucrBase.clsRsyntax.RemoveFromAfterCodes(clsIndexAssign)
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsRemoveLabelsFunction)
+            ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsGetFullDataframe)
             ucrBase.clsRsyntax.RemoveAssignTo()
             ucrBase.clsRsyntax.iCallType = 5
             ucrBase.clsRsyntax.bExcludeAssignedFunctionOutput = False
@@ -211,8 +317,9 @@ Public Class dlgCalculator
             clsAddScalarFunction.AddParameter("data_name", Chr(34) & dataFrameName & Chr(34), iPosition:=0)
             clsScalarsDataFuntion.AddParameter("data_name", Chr(34) & dataFrameName & Chr(34), iPosition:=0)
             ucrBase.clsRsyntax.AddToAfterCodes(clsAddScalarFunction, 0)
-            ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachScalarsFunction, 1)
-            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachScalarsFunction, 2)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsScalarsDataFuntion, 1)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachScalarsFunction, 2)
+            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachScalarsFunction, 3)
             ucrBase.clsRsyntax.SetAssignTo(strResut)
             ucrCalc.ucrSaveResultInto.btnColumnPosition.Enabled = False
             ucrCalc.ucrSaveResultInto.btnColumnPosition.Visible = True
@@ -225,10 +332,12 @@ Public Class dlgCalculator
             clsAddScalarFunction.AddParameter("data_name", Chr(34) & dataFrameName & Chr(34), iPosition:=0)
             clsScalarsDataFuntion.AddParameter("data_name", Chr(34) & dataFrameName & Chr(34), iPosition:=0)
             ucrBase.clsRsyntax.AddToAfterCodes(clsAddScalarFunction, 0)
-            ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachScalarsFunction, 1)
-            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachScalarsFunction, 2)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsScalarsDataFuntion, 1)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachScalarsFunction, 2)
+            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachScalarsFunction, 3)
         Else
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsAddScalarFunction)
+            ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsScalarsDataFuntion)
             ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsAttachScalarsFunction)
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsDetachScalarsFunction)
             ucrCalc.ucrSaveResultInto.btnColumnPosition.Enabled = True
@@ -262,18 +371,18 @@ Public Class dlgCalculator
             ucrCalc.ucrTryCalculator.ucrInputTryMessage.SetName("")
             clsScalarsDataFuntion.AddParameter("data_name", Chr(34) & strDataFrame & Chr(34))
             clsGetDataframe.AddParameter("data_name", Chr(34) & strDataFrame & Chr(34), iPosition:=0)
+            clsGetFullDataframe.AddParameter("data_name", Chr(34) & strDataFrame & Chr(34), iPosition:=0)
             clsAddScalarFunction.AddParameter("data_name", Chr(34) & strDataFrame & Chr(34), iPosition:=0)
             clsRemoveLabelsFunction.AddParameter("data_name", Chr(34) & strDataFrame & Chr(34), iPosition:=0)
             SaveResults()
             ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachFunction, 0)
-            ucrBase.clsRsyntax.AddToBeforeCodes(clsAttachScalarsFunction, 1)
+            ucrBase.clsRsyntax.AddToBeforeCodes(clsGetFullDataframe, 2)
 
-            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachFunction, 1)
+            ucrBase.clsRsyntax.AddToAfterCodes(clsDetachFunction, 100)
             ucrCalc.ucrSaveResultInto.Enabled = True
             ucrCalc.ucrChkStoreScalar.Visible = True
         Else
             ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsAttachFunction)
-            ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsAttachScalarsFunction)
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsDetachFunction)
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsDetachScalarsFunction)
             ucrCalc.ucrSelectorForCalculations.ResetCheckBoxScalar()
@@ -361,5 +470,3 @@ Public Class dlgCalculator
         End Select
     End Sub
 End Class
-
-
