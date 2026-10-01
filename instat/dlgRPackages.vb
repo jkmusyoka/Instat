@@ -86,9 +86,9 @@ Public Class dlgInstallRPackage
         clsDetachFunction.SetRCommand("detach_package")
         clsDetachFunction.AddParameter("unload ", "TRUE", iPosition:=1)
 
-        clsRepositoryFunction.SetRCommand("install_github")
-        clsRepositoryFunction.SetPackageName("devtools")
-        clsRepositoryFunction.AddParameter("upgrade", Chr(34) & "never" & Chr(34), iPosition:=1)
+        clsRepositoryFunction.SetRCommand("pak")
+        clsRepositoryFunction.SetPackageName("pak")
+        clsRepositoryFunction.AddParameter("ask", "FALSE", iPosition:=1)
 
         clsAfterOptionsFunc.SetRCommand("options")
         clsAfterOptionsFunc.AddParameter(strParameterName:="warn", strParameterValue:="0")
@@ -246,12 +246,14 @@ Public Class dlgInstallRPackage
 
     Private Sub ucrPnlRPackages_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrPnlRPackages.ControlValueChanged
         If rdoCRAN.Checked Then
+            ucrBase.clsRsyntax.iCallType = 2
             ucrBase.clsRsyntax.SetBaseRFunction(clsInstallPackage)
             ucrBase.clsRsyntax.AddToBeforeCodes(clsBeforeOptionsFunc)
             ucrBase.clsRsyntax.AddToAfterCodes(clsAfterOptionsFunc)
             ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsDetachFunction)
             ucrBase.clsRsyntax.RemoveFromAfterCodes(clsDisplayRFunction)
         Else
+            ucrBase.clsRsyntax.iCallType = 0
             ucrBase.clsRsyntax.AddToBeforeCodes(clsDetachFunction)
             ucrBase.clsRsyntax.SetBaseRFunction(clsRepositoryFunction)
             ucrBase.clsRsyntax.RemoveFromBeforeCodes(clsBeforeOptionsFunc)

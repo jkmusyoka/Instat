@@ -372,10 +372,10 @@ Public Class dlgHeatMapPlot
         bResetSubdialog = True
         bResetRugLayerSubdialog = True
 
-        ucrInputReorderValue.SetText(strNone)
+        ucrInputReorderValue.SetName(strNone)
         ucrInputReorderValue.bUpdateRCodeFromControl = True
 
-        ucrInputReorderVariableX.SetText(strNone)
+        ucrInputReorderVariableX.SetName(strNone)
         ucrInputReorderVariableX.bUpdateRCodeFromControl = True
 
         clsBaseOperator.SetOperation("+")
@@ -741,7 +741,7 @@ Public Class dlgHeatMapPlot
                     clsReorderValueFunction.AddParameter("X", "-" & ucrReceiverX.GetVariableNames(False), iPosition:=1)
                     clsHeatmapAesFunction.AddParameter("y", clsRFunctionParameter:=clsReorderValueFunction, iPosition:=0)
                 Case strReverse
-                    clsForecatsReverseValueFunction.AddParameter("f", ucrReceiverY.GetVariableNames(False), iPosition:=0)
+                    clsForecatsReverseValueFunction.AddParameter("f", "as.factor(" & ucrReceiverY.GetVariableNames(False) & ")", iPosition:=0)
                     clsHeatmapAesFunction.AddParameter("y", clsRFunctionParameter:=clsForecatsReverseValueFunction, iPosition:=0)
                 Case strNone
                     clsHeatmapAesFunction.AddParameter("y", ucrReceiverY.GetVariableNames(False), iPosition:=0)
@@ -754,7 +754,7 @@ Public Class dlgHeatMapPlot
                     clsReorderFunction.AddParameter("X", "-" & ucrReceiverY.GetVariableNames(False), iPosition:=1)
                     clsHeatmapAesFunction.AddParameter("x", clsRFunctionParameter:=clsReorderFunction, iPosition:=0)
                 Case strReverse
-                    clsForecatsReverseFunction.AddParameter("f", ucrReceiverX.GetVariableNames(False), iPosition:=0)
+                    clsForecatsReverseFunction.AddParameter("f", "as.factor(" & ucrReceiverX.GetVariableNames(False) & ")", iPosition:=0)
                     clsHeatmapAesFunction.AddParameter("x", clsRFunctionParameter:=clsForecatsReverseFunction, iPosition:=0)
                 Case strNone
                     clsHeatmapAesFunction.AddParameter("x", ucrReceiverX.GetVariableNames(False), iPosition:=0)
@@ -769,6 +769,7 @@ Public Class dlgHeatMapPlot
         AddRemoveGeomParameter()
         ChangePalette()
         Visibility()
+        AddDiscrete()
     End Sub
 
     Private Sub AutoFacetStation()
@@ -1023,9 +1024,21 @@ Public Class dlgHeatMapPlot
             End If
         End If
     End Sub
+    Private Sub AddDiscrete()
+        If rdoViridis.Checked Then
+            If Not ucrReceiverFill.IsEmpty Then
+                If ucrReceiverFill.strCurrDataType = "factor" OrElse ucrReceiverFill.strCurrDataType = "Character" Then
+                    clsColourPaletteFunction.AddParameter("discrete", "TRUE")
+                Else
+                    clsColourPaletteFunction.RemoveParameterByName("discrete")
+                End If
+            End If
+        End If
+    End Sub
 
     Private Sub ucrPnlColour_ControlValueChanged(ucrChangedControl As ucrCore) Handles ucrPnlColour.ControlValueChanged, ucrInputPalette.ControlValueChanged, ucrInputColourPalette.ControlValueChanged, ucrInputValue.ControlValueChanged, ucrColourFrom.ControlValueChanged, ucrColourTo.ControlValueChanged
         ChangePalette()
         Visibility()
+        AddDiscrete()
     End Sub
 End Class
